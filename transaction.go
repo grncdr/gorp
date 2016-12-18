@@ -24,6 +24,7 @@ type Transaction struct {
 	dbmap  *DbMap
 	tx     *sql.Tx
 	closed bool
+	logger GorpLogger
 }
 
 // Insert has the same behavior as DbMap.Insert(), but runs in a transaction.
@@ -58,9 +59,9 @@ func (t *Transaction) Select(i interface{}, query string, args ...interface{}) (
 
 // Exec has the same behavior as DbMap.Exec(), but runs in a transaction.
 func (t *Transaction) Exec(query string, args ...interface{}) (sql.Result, error) {
-	if t.dbmap.logger != nil {
+	if t.logger != nil {
 		now := time.Now()
-		defer t.dbmap.trace(now, query, args...)
+		defer t.trace(now, query, args...)
 	}
 	return exec(t, query, args...)
 }
@@ -104,9 +105,9 @@ func (t *Transaction) SelectOne(holder interface{}, query string, args ...interf
 func (t *Transaction) Commit() error {
 	if !t.closed {
 		t.closed = true
-		if t.dbmap.logger != nil {
+		if t.logger != nil {
 			now := time.Now()
-			defer t.dbmap.trace(now, "commit;")
+			defer t.trace(now, "commit;")
 		}
 		return t.tx.Commit()
 	}
@@ -118,9 +119,9 @@ func (t *Transaction) Commit() error {
 func (t *Transaction) Rollback() error {
 	if !t.closed {
 		t.closed = true
-		if t.dbmap.logger != nil {
+		if t.logger != nil {
 			now := time.Now()
-			defer t.dbmap.trace(now, "rollback;")
+			defer t.trace(now, "rollback;")
 		}
 		return t.tx.Rollback()
 	}
@@ -133,9 +134,9 @@ func (t *Transaction) Rollback() error {
 // derived from user input.
 func (t *Transaction) Savepoint(name string) error {
 	query := "savepoint " + t.dbmap.Dialect.QuoteField(name)
-	if t.dbmap.logger != nil {
+	if t.logger != nil {
 		now := time.Now()
-		defer t.dbmap.trace(now, query, nil)
+		defer t.trace(now, query, nil)
 	}
 	_, err := t.tx.Exec(query)
 	return err
@@ -146,9 +147,9 @@ func (t *Transaction) Savepoint(name string) error {
 // sanitize it if it is derived from user input.
 func (t *Transaction) RollbackToSavepoint(savepoint string) error {
 	query := "rollback to savepoint " + t.dbmap.Dialect.QuoteField(savepoint)
-	if t.dbmap.logger != nil {
+	if t.logger != nil {
 		now := time.Now()
-		defer t.dbmap.trace(now, query, nil)
+		defer t.trace(now, query, nil)
 	}
 	_, err := t.tx.Exec(query)
 	return err
@@ -159,9 +160,9 @@ func (t *Transaction) RollbackToSavepoint(savepoint string) error {
 // it if it is derived from user input.
 func (t *Transaction) ReleaseSavepoint(savepoint string) error {
 	query := "release savepoint " + t.dbmap.Dialect.QuoteField(savepoint)
-	if t.dbmap.logger != nil {
+	if t.logger != nil {
 		now := time.Now()
-		defer t.dbmap.trace(now, query, nil)
+		defer t.trace(now, query, nil)
 	}
 	_, err := t.tx.Exec(query)
 	return err
@@ -169,25 +170,30 @@ func (t *Transaction) ReleaseSavepoint(savepoint string) error {
 
 // Prepare has the same behavior as DbMap.Prepare(), but runs in a transaction.
 func (t *Transaction) Prepare(query string) (*sql.Stmt, error) {
-	if t.dbmap.logger != nil {
+	if t.logger != nil {
 		now := time.Now()
-		defer t.dbmap.trace(now, query, nil)
+		defer t.trace(now, query, nil)
 	}
 	return t.tx.Prepare(query)
 }
 
 func (t *Transaction) QueryRow(query string, args ...interface{}) *sql.Row {
-	if t.dbmap.logger != nil {
+	if t.logger != nil {
 		now := time.Now()
-		defer t.dbmap.trace(now, query, args...)
+		defer t.trace(now, query, args...)
 	}
 	return t.tx.QueryRow(query, args...)
 }
 
 func (t *Transaction) Query(query string, args ...interface{}) (*sql.Rows, error) {
-	if t.dbmap.logger != nil {
+	if t.logger != nil {
 		now := time.Now()
-		defer t.dbmap.trace(now, query, args...)
+		defer t.trace(now, query, args...)
 	}
 	return t.tx.Query(query, args...)
+}
+
+func (t *Transaction) trace(started time.Time, query string, args ...interface{}) {
+	var margs = argsString(args...)
+	t.logger.Printf("%s%s [%s] (%v)", t.dbmap.logPrefix, query, margs, (time.Now().Sub(started)))
 }

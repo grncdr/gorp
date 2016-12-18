@@ -643,14 +643,24 @@ func (m *DbMap) SelectOne(holder interface{}, query string, args ...interface{})
 // Begin starts a gorp Transaction
 func (m *DbMap) Begin() (*Transaction, error) {
 	if m.logger != nil {
-		now := time.Now()
-		defer m.trace(now, "begin;")
+		return m.BeginLogged(m.logger)
 	}
 	tx, err := m.Db.Begin()
 	if err != nil {
 		return nil, err
 	}
-	return &Transaction{m, tx, false}, nil
+	return &Transaction{m, tx, false, nil}, nil
+}
+
+func (m *DbMap) BeginLogged(log GorpLogger) (*Transaction, error) {
+	now := time.Now()
+	tx, err := m.Db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	txn := &Transaction{m, tx, false, log}
+	defer txn.trace(now, "begin;")
+	return txn, nil
 }
 
 // TableFor returns the *TableMap corresponding to the given Go Type
